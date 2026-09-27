@@ -1,1 +1,2 @@
-//! bHTTP: Binary HTTP Protocol Engine
+pub mod frame;
+pub use frame::FrameType;
