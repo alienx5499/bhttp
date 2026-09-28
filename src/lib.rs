@@ -1,2 +1,2 @@
 pub mod frame;
-pub use frame::FrameType;
+pub use frame::{FrameFlags, FrameType};
