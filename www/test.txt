@@ -1,0 +1,2 @@
+Hello from Binary HTTP static file server!
+Track 1 (bserve) and Track 2 (bcurl) working over one persistent connection.
