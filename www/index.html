@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binary HTTP Protocol Explorer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Top Nav -->
+        <header>
+            <div class="brand">
+                <span class="logo-badge">bHTTP/1.0</span>
+                <span style="font-weight: 700; font-size: 15px;">Binary HTTP Protocol</span>
+            </div>
+            <div class="status-badge">
+                <span class="pulse-dot"></span>
+                <span>bserve Engine Ready</span>
+            </div>
+        </header>
+
+        <!-- Hero -->
+        <section class="hero">
+            <h1>Binary HTTP Protocol Works!</h1>
+            <p>Served over custom binary frames from <code>bserve</code> to <code>bcurl</code> with deterministic 9-byte headers and HPACK static compression.</p>
+        </section>
+
+        <!-- Interactive Playground -->
+        <div class="grid-2">
+            <!-- Left: Frame Builder -->
+            <div class="card">
+                <div class="card-title">
+                    <span>Frame Builder</span>
+                    <span style="font-size: 12px; color: var(--accent-cyan); font-weight: 500;">Live Bit Calculation</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="frameType">Frame Type</label>
+                    <select id="frameType" onchange="renderFrame()">
+                        <option value="1">HEADERS (0x01)</option>
+                        <option value="2">DATA (0x02)</option>
+                        <option value="4">PING (0x04)</option>
+                        <option value="5">GOAWAY (0x05)</option>
+                        <option value="254">UNKNOWN (0xFE - Forward Compat Test)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="streamId">Stream ID</label>
+                    <input type="number" id="streamId" value="1" min="1" step="2" oninput="renderFrame()">
+                </div>
+
+                <div class="form-group">
+                    <label>Frame Flags</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="flagEndStream" checked onchange="renderFrame()">
+                            <span>END_STREAM (0x01)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="flagEndHeaders" checked onchange="renderFrame()">
+                            <span>END_HEADERS (0x04)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="headerInputs">
+                    <label>Headers (:path, :method, host)</label>
+                    <input type="text" id="reqPath" value="/index.html" placeholder=":path" oninput="renderFrame()" style="margin-bottom: 6px;">
+                    <input type="text" id="reqHost" value="localhost:9000" placeholder="host" oninput="renderFrame()">
+                </div>
+
+                <div class="form-group">
+                    <label>Click to Insert HPACK Static Header</label>
+                    <div class="table-list">
+                        <div class="table-tag" onclick="selectHeader(':method', 'GET')">1: :method</div>
+                        <div class="table-tag" onclick="selectHeader(':path', '/index.html')">2: :path</div>
+                        <div class="table-tag" onclick="selectHeader(':status', '200')">3: :status</div>
+                        <div class="table-tag" onclick="selectHeader('host', 'localhost:9000')">4: host</div>
+                        <div class="table-tag" onclick="selectHeader('content-type', 'text/html')">5: content-type</div>
+                        <div class="table-tag" onclick="selectHeader('content-length', '306')">6: content-length</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Real-time Frame Hexdump -->
+            <div class="card">
+                <div class="card-title">
+                    <span>Wire Hexdump & Breakdown</span>
+                    <span id="byteCounter" style="font-size: 12px; color: var(--accent-emerald);">37 Bytes</span>
+                </div>
+
+                <div class="hex-header-info">
+                    <div>
+                        <span>Payload Len</span>
+                        <strong id="infoLen">28 B</strong>
+                    </div>
+                    <div>
+                        <span>Type Byte</span>
+                        <strong id="infoType">0x01</strong>
+                    </div>
+                    <div>
+                        <span>Flags</span>
+                        <strong id="infoFlags">0x05</strong>
+                    </div>
+                    <div>
+                        <span>Stream ID</span>
+                        <strong id="infoStream">1</strong>
+                    </div>
+                </div>
+
+                <div class="hexdump-viewer" id="hexdumpOutput">Loading wire bytes...</div>
+            </div>
+        </div>
+
+        <!-- Terminal Quickrun -->
+        <div class="card">
+            <div class="card-title">Run bHTTP in Terminal</div>
+            <div class="cmd-box">
+                <code>./target/release/bcurl -v localhost:9000/index.html</code>
+                <button class="btn-copy" onclick="copyCmd(this, './target/release/bcurl -v localhost:9000/index.html')">Copy</button>
+            </div>
+            <div class="cmd-box">
+                <code>./target/release/bcurl localhost:9000/test.txt</code>
+                <button class="btn-copy" onclick="copyCmd(this, './target/release/bcurl localhost:9000/test.txt')">Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const STATIC_TABLE = [
+            ":method", ":path", ":status", "host", "content-type",
+            "content-length", "connection", "user-agent", "accept", "server"
+        ];
+
+        function selectHeader(name, defaultVal) {
+            if (name === ':path') {
+                document.getElementById('reqPath').value = defaultVal;
+            } else if (name === 'host') {
+                document.getElementById('reqHost').value = defaultVal;
+            }
+            renderFrame();
+        }
+
+        function renderFrame() {
+            const frameType = parseInt(document.getElementById('frameType').value, 10);
+            const streamId = parseInt(document.getElementById('streamId').value, 10) || 1;
+            const endStream = document.getElementById('flagEndStream').checked;
+            const endHeaders = document.getElementById('flagEndHeaders').checked;
+
+            let flags = 0;
+            if (endStream) flags |= 0x01;
+            if (endHeaders) flags |= 0x04;
+
+            let payload = [];
+
+            if (frameType === 1) { // HEADERS
+                const pathVal = document.getElementById('reqPath').value;
+                const hostVal = document.getElementById('reqHost').value;
+
+                // 1. :method: GET (Index 1)
+                payload.push(0x81);
+                payload.push(0x00, 0x03);
+                payload.push(0x47, 0x45, 0x54); // "GET"
+
+                // 2. :path: ... (Index 2)
+                payload.push(0x82);
+                payload.push((pathVal.length >> 8) & 0xFF, pathVal.length & 0xFF);
+                for (let i = 0; i < pathVal.length; i++) payload.push(pathVal.charCodeAt(i));
+
+                // 3. host: ... (Index 4)
+                payload.push(0x84);
+                payload.push((hostVal.length >> 8) & 0xFF, hostVal.length & 0xFF);
+                for (let i = 0; i < hostVal.length; i++) payload.push(hostVal.charCodeAt(i));
+            } else if (frameType === 2) { // DATA
+                const dummy = "Hello from binary HTTP DATA payload!";
+                for (let i = 0; i < dummy.length; i++) payload.push(dummy.charCodeAt(i));
+            } else if (frameType === 254) { // UNKNOWN 0xFE
+                const v2 = "Future v2 payload - receiver skips cleanly in O(1) memory";
+                for (let i = 0; i < v2.length; i++) payload.push(v2.charCodeAt(i));
+            }
+
+            const length = payload.length;
+
+            // 9-byte header
+            const headerBytes = [
+                (length >> 16) & 0xFF,
+                (length >> 8) & 0xFF,
+                length & 0xFF,
+                frameType,
+                flags,
+                (streamId >> 24) & 0x7F,
+                (streamId >> 16) & 0xFF,
+                (streamId >> 8) & 0xFF,
+                streamId & 0xFF
+            ];
+
+            const totalBytes = headerBytes.concat(payload);
+
+            // Update info labels
+            document.getElementById('infoLen').innerText = length + " B";
+            document.getElementById('infoType').innerText = "0x" + frameType.toString(16).padStart(2, '0').toUpperCase();
+            document.getElementById('infoFlags').innerText = "0x" + flags.toString(16).padStart(2, '0').toUpperCase();
+            document.getElementById('infoStream').innerText = streamId;
+            document.getElementById('byteCounter').innerText = totalBytes.length + " Total Bytes";
+
+            // Format Hexdump
+            let out = "";
+            for (let i = 0; i < totalBytes.length; i += 16) {
+                const chunk = totalBytes.slice(i, i + 16);
+                const offsetHex = i.toString(16).padStart(4, '0').toUpperCase();
+                
+                let hexCol = "";
+                let ascCol = "";
+                
+                for (let j = 0; j < chunk.length; j++) {
+                    const b = chunk[j];
+                    hexCol += b.toString(16).padStart(2, '0').toUpperCase() + " ";
+                    if (j === 7) hexCol += " ";
+                    ascCol += (b >= 32 && b <= 126) ? String.fromCharCode(b) : ".";
+                }
+                
+                const paddedHex = hexCol.padEnd(50, ' ');
+                out += `${offsetHex}:  ${paddedHex} |${ascCol}|\n`;
+            }
+
+            document.getElementById('hexdumpOutput').innerText = out;
+        }
+
+        function copyCmd(btn, text) {
+            navigator.clipboard.writeText(text);
+            const orig = btn.innerText;
+            btn.innerText = "Copied!";
+            setTimeout(() => btn.innerText = orig, 1500);
+        }
+
+        renderFrame();
+    </script>
+</body>
+</html>
